@@ -1,0 +1,15 @@
+[package]
+name = "glue"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+binrw = "0.15.0"
+clap.workspace = true
+prettytable = "0.10.0"
+
+[dev-dependencies]
+tempfile.workspace = true
+assert_cmd.workspace = true
+predicates.workspace = true
