@@ -53,7 +53,7 @@ pub struct FileRecord {
 }
 
 impl FileRecord {
-    /// Instantiate a [FileRecord] from the contents of path.
+    /// Instantiate a [`FileRecord`] from the contents of path.
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let filename = match path.file_name() {
@@ -77,8 +77,8 @@ impl FileRecord {
         })
     }
 
-    /// Preview the contents of a [FileRecord]. If the record's contents
-    /// are empty, [None] is returned. Otherwise, a [Preview] is returned.
+    /// Preview the contents of a [`FileRecord`]. If the record's contents
+    /// are empty, [`None`] is returned. Otherwise, a [`Preview`] is returned.
     pub fn preview(&self, size: u32) -> Option<Preview> {
         if self.size == 0 {
             return None;
@@ -100,15 +100,15 @@ impl FileRecord {
         }
     }
 
-    /// Extract the [FileRecord]s contents to the provided writer.
+    /// Extract the [`FileRecord`]'s contents to the provided writer.
     pub fn extract<W: Write>(&self, writer: &mut W) -> Result<()> {
-        let content = &self.content.as_slice();
-        writer.write(&content)?;
+        let content = self.content.as_slice();
+        writer.write_all(content)?;
         Ok(())
     }
 }
 
-/// Preview of a [FileRecord]s contents.
+/// Preview of a [`FileRecord`]'s contents.
 pub enum Preview {
     /// String represents a file whose contents are textual. It includes
     /// the preview, along with an indication of whether the preview is
@@ -123,9 +123,43 @@ pub enum Preview {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
     use std::io::Write;
 
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn file_record_extract_copies_all_data() {
+        let input = vec![1, 2, 3, 4];
+        let buffer = Vec::new();
+        let mut writer = Cursor::new(buffer);
+
+        let file_record = super::FileRecord {
+            filename: "foo.txt".into(),
+            size: input.len() as u32,
+            content: input.clone(),
+        };
+
+        assert!(file_record.extract(&mut writer).is_ok());
+
+        let result = writer.into_inner();
+        assert_eq!(result, input, "output content is not equal to input");
+    }
+
+    #[test]
+    fn file_record_extract_errors_if_output_truncated() {
+        let input = vec![1, 2, 3, 4];
+        let buffer = [0; 2];
+        let mut writer = Cursor::new(buffer);
+
+        let file_record = super::FileRecord {
+            filename: "foo.txt".into(),
+            size: input.len() as u32,
+            content: input,
+        };
+
+        assert!(file_record.extract(&mut writer).is_err());
+    }
 
     #[test]
     fn file_record_from_path_fn_reads_an_existing_file() {
