@@ -8,7 +8,7 @@ use prettytable::{Table, format, row};
 use glue::Archive;
 
 const DEFAULT_ARCHIVE_FILE: &str = "archive.glue";
-const DEFAULT_PREVIEW_SIZE: usize = 64;
+const DEFAULT_PREVIEW_SIZE: u64 = 64;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -42,7 +42,7 @@ fn main() -> Result<()> {
             table.set_titles(titles);
 
             for record in archive.records {
-                let preview = match record.preview(preview_size as u32) {
+                let preview = match record.preview(preview_size) {
                     Some(preview) => match preview {
                         glue::Preview::String {
                             mut preview,
@@ -124,7 +124,7 @@ enum Commands {
 
         /// The length of text to preview in the output table.
         #[arg(short, long, default_value_t = DEFAULT_PREVIEW_SIZE)]
-        preview_size: usize,
+        preview_size: u64,
     },
 
     /// Extract the contents of an archive file.
