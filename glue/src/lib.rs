@@ -24,8 +24,8 @@ pub struct Archive {
 }
 
 impl Archive {
-    /// Instantiates an [Archive] from a slice of paths. As long as there
-    /// are no errors in reading the referenced files, the [Archive] will
+    /// Instantiates an [`Archive`] from a slice of paths. As long as there
+    /// are no errors in reading the referenced files, the [`Archive`] will
     /// include records for each file.
     pub fn from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
         let mut records = Vec::new();
@@ -45,7 +45,11 @@ pub struct FileRecord {
     #[brw(align_after = 8)]
     pub filename: NullString,
 
-    pub size: u32,
+    // usize would probably be more natural here, but that is not reliably
+    // serializable/deserializable between systems. Because u64 is a common
+    // max file size on most current systems (and is the type of file size in
+    // file metadata [std::fs::Metadata]), that's what we use here.
+    pub size: u64,
 
     #[br(count = size)]
     #[brw(align_after = 16)]
@@ -65,7 +69,7 @@ impl FileRecord {
         };
         let mut file = File::open(path)?;
 
-        let size = file.metadata()?.len() as u32;
+        let size = file.metadata()?.len();
 
         let mut content = Vec::new();
         file.read_to_end(&mut content)?;
@@ -79,7 +83,7 @@ impl FileRecord {
 
     /// Preview the contents of a [`FileRecord`]. If the record's contents
     /// are empty, [`None`] is returned. Otherwise, a [`Preview`] is returned.
-    pub fn preview(&self, size: u32) -> Option<Preview> {
+    pub fn preview(&self, size: u64) -> Option<Preview> {
         if self.size == 0 {
             return None;
         }
@@ -136,7 +140,7 @@ mod tests {
 
         let file_record = super::FileRecord {
             filename: "foo.txt".into(),
-            size: input.len() as u32,
+            size: input.len().try_into().unwrap(),
             content: input.clone(),
         };
 
@@ -154,7 +158,7 @@ mod tests {
 
         let file_record = super::FileRecord {
             filename: "foo.txt".into(),
-            size: input.len() as u32,
+            size: input.len().try_into().unwrap(),
             content: input,
         };
 
@@ -179,7 +183,7 @@ mod tests {
         );
         assert_eq!(
             file_record.size,
-            content.len() as u32,
+            content.len().try_into().unwrap(),
             "unexpected FileRecord size"
         );
         assert_eq!(
