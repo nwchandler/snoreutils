@@ -140,7 +140,7 @@ mod tests {
 
         let file_record = super::FileRecord {
             filename: "foo.txt".into(),
-            size: input.len().try_into().unwrap(),
+            size: input.len() as u64,
             content: input.clone(),
         };
 
@@ -158,7 +158,7 @@ mod tests {
 
         let file_record = super::FileRecord {
             filename: "foo.txt".into(),
-            size: input.len().try_into().unwrap(),
+            size: input.len() as u64,
             content: input,
         };
 
