@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use binrw::{NullString, binrw};
 
 /// Archive represents a collection of file contents, grouped
@@ -25,12 +25,18 @@ pub struct Archive {
 
 impl Archive {
     /// Instantiates an [`Archive`] from a slice of paths. As long as there
-    /// are no errors in reading the referenced files, the [`Archive`] will
-    /// include records for each file.
+    /// are no errors in reading the referenced files, and there are
+    /// no duplicate filenames, the [`Archive`] will include records for each file.
     pub fn from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
         let mut records = Vec::new();
+        let mut filenames = std::collections::HashSet::new();
         for path in paths {
-            records.push(FileRecord::from_path(path)?);
+            let record = FileRecord::from_path(path)?;
+            let filename = &record.filename.to_string();
+            if !filenames.insert(filename.clone()) {
+                return Err(anyhow!("duplicate filename detected: {}", filename));
+            }
+            records.push(record);
         }
         Ok(Self { records })
     }
@@ -130,7 +136,7 @@ mod tests {
     use std::io::Cursor;
     use std::io::Write;
 
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn file_record_extract_copies_all_data() {
@@ -191,5 +197,29 @@ mod tests {
             content.as_bytes().to_vec(),
             "unexpected FileRecord content"
         )
+    }
+
+    #[test]
+    fn archive_from_paths_detects_duplicate_filenames() {
+        use std::fs::File;
+
+        let filename = "my-file.txt";
+
+        let mut dirs = vec![];
+        let mut paths = vec![];
+        for _ in 0..2 {
+            let dir = TempDir::new().unwrap();
+            let path = dir.path().join(filename);
+            File::create_new(&path).unwrap();
+            dirs.push(dir);
+            paths.push(path);
+        }
+
+        let result = super::Archive::from_paths(&paths);
+
+        assert!(
+            result.is_err(),
+            "archive with duplicate filenames should return error"
+        );
     }
 }
