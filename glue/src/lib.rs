@@ -1,11 +1,14 @@
 use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
     fs::File,
     io::{Read, Write},
     path::Path,
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use binrw::{NullString, binrw};
+use thiserror::Error;
 
 /// Archive represents a collection of file contents, grouped
 /// together into a single unit.
@@ -27,18 +30,65 @@ impl Archive {
     /// Instantiates an [`Archive`] from a slice of paths. As long as there
     /// are no errors in reading the referenced files, and there are
     /// no duplicate filenames, the [`Archive`] will include records for each file.
-    pub fn from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Self> {
+    ///
+    /// # Errors
+    /// Problems in creating the archive will return an [`ArchiveCreationError`].
+    pub fn from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Self, ArchiveCreationError> {
         let mut records = Vec::new();
-        let mut filenames = std::collections::HashSet::new();
+        let mut filenames = HashSet::new();
+        let mut filename_to_path: Option<FilenameToPath> = None;
         for path in paths {
             let record = FileRecord::from_path(path)?;
             let filename = &record.filename.to_string();
             if !filenames.insert(filename.clone()) {
-                return Err(anyhow!("duplicate filename detected: {}", filename));
+                if filename_to_path.is_none() {
+                    filename_to_path = Some(FilenameToPath(HashMap::new()));
+                }
+                filename_to_path.as_mut().unwrap().append(
+                    filename.clone(),
+                    path.as_ref().to_string_lossy().to_string(),
+                );
             }
             records.push(record);
         }
-        Ok(Self { records })
+        if let Some(duplicate_filenames) = filename_to_path {
+            Err(ArchiveCreationError::DuplicateFilenames(
+                duplicate_filenames,
+            ))
+        } else {
+            Ok(Self { records })
+        }
+    }
+}
+
+/// This type represents errors that can occur when creating a new ['Archive'].
+#[derive(Error, Debug)]
+pub enum ArchiveCreationError {
+    /// The filenames in an archive must be unique.
+    #[error("duplicate filenames detected: {0}")]
+    DuplicateFilenames(FilenameToPath),
+
+    /// Uncategorized error.
+    // FIXME: Replace anyhow with more precise error types
+    #[error("an unexpected error occurred")]
+    Other(#[from] anyhow::Error),
+}
+
+#[derive(Debug)]
+pub struct FilenameToPath(HashMap<String, Vec<String>>);
+
+impl FilenameToPath {
+    fn append(&mut self, name: String, path: String) {
+        self.0.entry(name).or_insert_with(Vec::new).push(path);
+    }
+}
+
+impl Display for FilenameToPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (name, paths) in self.0.iter() {
+            write!(f, "{name}: {:?}; ", paths)?;
+        }
+        Ok(())
     }
 }
 
