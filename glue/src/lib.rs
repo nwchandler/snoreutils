@@ -1,9 +1,9 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Display,
     fs::File,
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{Result, bail};
@@ -35,26 +35,27 @@ impl Archive {
     /// Problems in creating the archive will return an [`ArchiveCreationError`].
     pub fn from_paths<P: AsRef<Path>>(paths: &[P]) -> Result<Self, ArchiveCreationError> {
         let mut records = Vec::new();
-        let mut filenames = HashSet::new();
-        let mut filename_to_path: Option<FilenameToPath> = None;
+
+        let mut duplicate_filenames_detected = false;
+        let mut names_to_paths: HashMap<String, Vec<PathBuf>> = HashMap::new();
+
         for path in paths {
             let record = FileRecord::from_path(path)?;
-            let filename = &record.filename.to_string();
-            if !filenames.insert(filename.clone()) {
-                if filename_to_path.is_none() {
-                    filename_to_path = Some(FilenameToPath(HashMap::new()));
-                }
-                filename_to_path.as_mut().unwrap().append(
-                    filename.clone(),
-                    path.as_ref().to_string_lossy().to_string(),
-                );
+            let filename = record.filename.to_string();
+
+            if let Some(existing) = names_to_paths.get_mut(&filename) {
+                duplicate_filenames_detected = true;
+                existing.push(path.as_ref().to_path_buf());
+            } else {
+                names_to_paths.insert(filename, vec![path.as_ref().to_path_buf()]);
             }
+
             records.push(record);
         }
-        if let Some(duplicate_filenames) = filename_to_path {
-            Err(ArchiveCreationError::DuplicateFilenames(
-                duplicate_filenames,
-            ))
+        if duplicate_filenames_detected {
+            Err(ArchiveCreationError::DuplicateFilenames(FilenameToPath(
+                names_to_paths,
+            )))
         } else {
             Ok(Self { records })
         }
@@ -75,13 +76,7 @@ pub enum ArchiveCreationError {
 }
 
 #[derive(Debug)]
-pub struct FilenameToPath(HashMap<String, Vec<String>>);
-
-impl FilenameToPath {
-    fn append(&mut self, name: String, path: String) {
-        self.0.entry(name).or_insert_with(Vec::new).push(path);
-    }
-}
+pub struct FilenameToPath(HashMap<String, Vec<PathBuf>>);
 
 impl Display for FilenameToPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
