@@ -60,6 +60,34 @@ impl Archive {
             Ok(Self { records })
         }
     }
+
+    /// Extract [`Archive`] contents to the provided directory path.
+    ///
+    /// # Errors
+    /// Problems creating the output files or invalid archive contents will
+    /// return [`ArchiveExtractionError`].
+    pub fn extract<P: AsRef<Path>>(&self, dir: P) -> Result<(), ArchiveExtractionError> {
+        for record in self.records.iter() {
+            let filename = record.filename.to_string();
+            let path = dir.as_ref().join(filename);
+
+            let mut file = File::create_new(path)?;
+            if record.extract(&mut file).is_err() {
+                return Err(ArchiveExtractionError::FileRecordError);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// This type represents errors that can occur when extracting an [`Archive`].
+#[derive(Error, Debug)]
+pub enum ArchiveExtractionError {
+    #[error("unable to create file: {0}")]
+    FileCreationError(#[from] std::io::Error),
+
+    #[error("error creating file from file record")]
+    FileRecordError,
 }
 
 /// This type represents errors that can occur when creating a new ['Archive'].
@@ -179,6 +207,7 @@ pub enum Preview {
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+    use std::io::Read;
     use std::io::Write;
 
     use tempfile::{NamedTempFile, TempDir};
@@ -266,5 +295,45 @@ mod tests {
             result.is_err(),
             "archive with duplicate filenames should return error"
         );
+    }
+
+    #[test]
+    fn archive_extract() {
+        let dir = TempDir::new().unwrap();
+        let dir = dir.path();
+
+        let archive = super::Archive {
+            records: vec![
+                super::FileRecord {
+                    filename: "1.txt".into(),
+                    size: 5,
+                    content: "hello".into(),
+                },
+                super::FileRecord {
+                    filename: "2.txt".into(),
+                    size: 6,
+                    content: vec![1, 2, 3, 4, 5, 6],
+                },
+            ],
+        };
+
+        archive.extract(&dir).unwrap();
+
+        let dir_entries = std::fs::read_dir(&dir).unwrap();
+        assert_eq!(
+            dir_entries.count(),
+            2,
+            "there should be two extracted files"
+        );
+
+        let mut file = std::fs::File::open(dir.join("1.txt")).unwrap();
+        let mut buf = vec![];
+        assert_eq!(5, file.read_to_end(&mut buf).unwrap());
+        assert_eq!("hello".as_bytes(), buf);
+
+        let mut file = std::fs::File::open(dir.join("2.txt")).unwrap();
+        let mut buf = vec![];
+        assert_eq!(6, file.read_to_end(&mut buf).unwrap());
+        assert_eq!(vec![1, 2, 3, 4, 5, 6], buf);
     }
 }
