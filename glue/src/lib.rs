@@ -69,6 +69,9 @@ impl Archive {
     pub fn extract<P: AsRef<Path>>(&self, dir: P) -> Result<(), ArchiveExtractionError> {
         for record in self.records.iter() {
             let filename = record.filename.to_string();
+            if !Self::filename_is_valid(&filename) {
+                return Err(ArchiveExtractionError::InvalidFilename(filename.into()));
+            }
             let path = dir.as_ref().join(filename);
 
             let mut file = File::create_new(path)?;
@@ -77,6 +80,20 @@ impl Archive {
             }
         }
         Ok(())
+    }
+
+    // This function does a basic check on a filename to avoid bad input (such
+    // as non-UTF-8 names and path traversals). This is a very simplistic
+    // implementation currently, relying on lexical evaluation and very
+    // simple filename assumptions.
+    fn filename_is_valid<P: AsRef<Path>>(filename: P) -> bool {
+        let Some(path_string) = filename.as_ref().to_str() else {
+            return false;
+        };
+        if path_string.contains(['/', '\\']) {
+            return false;
+        }
+        true
     }
 }
 
@@ -88,9 +105,12 @@ pub enum ArchiveExtractionError {
 
     #[error("error creating file from file record")]
     FileRecordError,
+
+    #[error("invalid filename: {0}")]
+    InvalidFilename(PathBuf),
 }
 
-/// This type represents errors that can occur when creating a new ['Archive'].
+/// This type represents errors that can occur when creating a new [`Archive`].
 #[derive(Error, Debug)]
 pub enum ArchiveCreationError {
     /// The filenames in an archive must be unique.
@@ -209,6 +229,7 @@ mod tests {
     use std::io::Cursor;
     use std::io::Read;
     use std::io::Write;
+    use std::path::Path;
 
     use tempfile::{NamedTempFile, TempDir};
 
@@ -335,5 +356,42 @@ mod tests {
         let mut buf = vec![];
         assert_eq!(6, file.read_to_end(&mut buf).unwrap());
         assert_eq!(vec![1, 2, 3, 4, 5, 6], buf);
+    }
+
+    #[test]
+    fn test_archive_filename_is_valid() {
+        let path = Path::new("foo.txt");
+        assert!(super::Archive::filename_is_valid(path));
+
+        let path = Path::new("./foo.txt");
+        assert!(!super::Archive::filename_is_valid(path));
+
+        let path = Path::new("../foo.txt");
+        assert!(!super::Archive::filename_is_valid(path));
+
+        let path = Path::new("C:\\foo.txt");
+        assert!(!super::Archive::filename_is_valid(path));
+    }
+
+    #[test]
+    fn archive_extract_prevents_invalid_filenames() {
+        let dir = TempDir::new().unwrap();
+        let dir = dir.path();
+
+        let subdir = dir.join("subdir");
+        std::fs::create_dir(&subdir).unwrap();
+
+        let archive = super::Archive {
+            records: vec![super::FileRecord {
+                filename: "../1.txt".into(),
+                size: 5,
+                content: "hello".into(),
+            }],
+        };
+
+        assert!(matches!(
+            archive.extract(&subdir),
+            Err(super::ArchiveExtractionError::InvalidFilename(_))
+        ));
     }
 }
