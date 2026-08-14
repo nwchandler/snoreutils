@@ -186,21 +186,27 @@ impl FileRecord {
         if self.size == 0 {
             return None;
         }
-        let truncated = self.size > size;
+        let mut truncated = self.size > size;
         let size = if truncated { size } else { self.size };
 
-        let preview = str::from_utf8(&self.content[..size as usize]);
-        match preview {
-            // If we were able to decode as UTF-8, then treat this as
-            // a string.
-            Ok(s) => Some(Preview::String {
-                preview: String::from(s),
-                truncated,
-            }),
-            // If we were not able to decode as UTF-8, then treat it as
-            // data instead.
-            Err(_) => Some(Preview::Data),
+        // UTF-8 characters can be up to 4 bytes. If we fail to decode the
+        // requested input size properly, we check whether we are inside of
+        // a multi-byte UTF-8 character and cut back a bit, until we can be
+        // sure that this is not text.
+        for i in 0..size_of::<char>() {
+            let preview = str::from_utf8(&self.content[..(size as usize) - i]);
+            if preview.is_ok() {
+                return Some(Preview::String {
+                    preview: String::from(preview.unwrap()),
+                    truncated,
+                });
+            }
+            // If we haven't found a text string at this point, then we have
+            // a truncated output.
+            truncated = true;
         }
+
+        Some(Preview::Data)
     }
 
     /// Extract the [`FileRecord`]'s contents to the provided writer.
@@ -393,5 +399,36 @@ mod tests {
             archive.extract(&subdir),
             Err(super::ArchiveExtractionError::InvalidFilename(_))
         ));
+    }
+
+    #[test]
+    fn preview_handles_utf8() {
+        let input = "Hello 🦀";
+        let raw_input = input.as_bytes();
+        let record = super::FileRecord {
+            filename: "foo.txt".into(),
+            size: raw_input.len() as u64,
+            content: raw_input.to_vec(),
+        };
+
+        // Cut off before the emoji
+        let super::Preview::String { preview, .. } = record.preview(5).unwrap() else {
+            panic!("preview failed for partial contents")
+        };
+        assert_eq!(preview, "Hello");
+
+        // Include the whole contents
+        let super::Preview::String { preview, .. } =
+            record.preview(raw_input.len() as u64).unwrap()
+        else {
+            panic!("preview failed for full contents")
+        };
+        assert_eq!(preview, "Hello 🦀");
+
+        // Cut off mid-emoji
+        let super::Preview::String { preview, .. } = record.preview(7).unwrap() else {
+            panic!("preview failed in mid-emoji")
+        };
+        assert_eq!(preview, "Hello ");
     }
 }
