@@ -8,6 +8,7 @@ anyhow.workspace = true
 binrw = "0.15.0"
 clap.workspace = true
 prettytable = "0.10.0"
+thiserror.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
