@@ -1,4 +1,4 @@
-use std::{fs::File, io::ErrorKind};
+use std::fs::File;
 
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
@@ -67,27 +67,12 @@ fn main() -> Result<()> {
             table.printstd();
         }
 
-        Commands::Extract { archive, keep } => {
+        Commands::Extract { archive } => {
             let mut reader = File::open(archive)?;
             let archive = Archive::read(&mut reader)?;
 
-            for record in archive.records {
-                let filename = &record.filename;
-                let mut file = if *keep {
-                    match File::create_new(filename.to_string()) {
-                        Ok(f) => f,
-                        Err(e) => match e.kind() {
-                            ErrorKind::AlreadyExists => continue,
-                            _ => {
-                                return Err(e.into());
-                            }
-                        },
-                    }
-                } else {
-                    File::create(filename.to_string())?
-                };
-                record.extract(&mut file)?;
-            }
+            let dir = std::env::current_dir()?;
+            archive.extract(dir)?;
         }
     }
     Ok(())
@@ -132,9 +117,5 @@ enum Commands {
         /// The archive file you want to extract.
         #[arg(required = true)]
         archive: String,
-
-        /// Do not overwrite existing output file contents.
-        #[arg(short, long, default_value_t = false)]
-        keep: bool,
     },
 }
